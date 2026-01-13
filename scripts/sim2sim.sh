@@ -1,5 +1,7 @@
-SCRIPT_DIR=$(dirname $(realpath $0))
+SCRIPT_DIR=$PWD
 ckpt_path=${SCRIPT_DIR}/assets/ckpts/twist2_1017_20k.onnx
+
+source ~/miniforge3/bin/activate twist2
 
 cd deploy_real
 

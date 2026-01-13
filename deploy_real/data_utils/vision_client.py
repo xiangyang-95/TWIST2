@@ -125,12 +125,16 @@ class VisionClient:
 
         # If shared memory is enabled for RGB images, copy it over
         if self.img_shm_enabled and self.img_shape is not None:
-            if color_img.shape == self.img_shape:
-                np.copyto(self.img_array, color_img)
-            else:
-                # If shape doesn't match exactly, you might need a crop/resizing.
-                h, w = self.img_shape[0], self.img_shape[1]
-                np.copyto(self.img_array, color_img[:h, :w])
+            try:
+                if color_img.shape == self.img_shape:
+                    np.copyto(self.img_array, color_img)
+                else:
+                    # Resize if shape mismatch
+                    h, w = self.img_shape[0], self.img_shape[1]
+                    resized = cv2.resize(color_img, (w, h))
+                    np.copyto(self.img_array, resized)
+            except Exception as e:
+                print(f"[VisionClient] Error copying to SHM: {e}")
 
         # If you want to display the image
         if self.image_show:
@@ -202,85 +206,49 @@ class VisionClient:
         """
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.SUB)
+        self.socket.setsockopt(zmq.RCVHWM, 1)  # Only keep latest message
+        self.socket.setsockopt(zmq.LINGER, 0)
         self.socket.connect(f"tcp://{self.server_address}:{self.port}")
         self.socket.setsockopt_string(zmq.SUBSCRIBE, "")
 
-        print(f"[VisionClient] Subscribed to tcp://{self.server_address}:{self.port}. Waiting for data...")
+        poller = zmq.Poller()
+        poller.register(self.socket, zmq.POLLIN)
 
-        verbose = False
+        print(f"[VisionClient] Subscribed to tcp://{self.server_address}:{self.port}. Waiting for data...")
         try:
             while self.running:
-                try:
-                    start_time = time.time()
-
-                    # 接收消息
-                    message = self.socket.recv(zmq.NOBLOCK)
-                
-                    if len(message) < 12:  # 至少需要12字节的头部
-                        continue
-                    
-                    # 解析头部信息：[宽度][高度][JPEG数据长度]
-                    width = struct.unpack('i', message[0:4])[0]
-                    height = struct.unpack('i', message[4:8])[0]
-                    jpeg_length = struct.unpack('i', message[8:12])[0]
-                    
-                    # 验证JPEG数据长度
-                    actual_jpeg_size = len(message) - 12
-                    
-                    if actual_jpeg_size != jpeg_length:
-                        if verbose:
-                            print(f"[Warning] JPEG size mismatch: expected {jpeg_length}, got {actual_jpeg_size}")
-                        continue
-                    
-                    # 提取JPEG数据并解码
-                    jpeg_data = message[12:]
-                    
+                events = dict(poller.poll(timeout=100))
+                if self.socket in events:
                     try:
-                        # 使用OpenCV解码JPEG数据
-                        image = cv2.imdecode(np.frombuffer(jpeg_data, dtype=np.uint8), cv2.IMREAD_COLOR)
-                        
-                        if image is None:
-                            if verbose:
-                                print("[Warning] Failed to decode JPEG image")
-                            continue
-                            
-                        # 验证解码后的图像尺寸
-                        if image.shape[0] != height or image.shape[1] != width:
-                            if verbose:
-                                print(f"[Warning] Decoded image size {image.shape} doesn't match expected {height}x{width}")
-                            # 但仍继续处理，因为JPEG解码可能产生轻微的尺寸差异
-                        
-                    except Exception as e:
-                        if verbose:
-                            print(f"[Warning] JPEG decode error: {e}")
-                        continue
-                    
-                    # # Check what data we have
-                    # have_color_data = 'rgb' in data and data['rgb'] is not None
-                    # have_depth_data = 'depth' in data and data['depth'] is not None
-                
-                    have_color_data = True
-                    have_depth_data = False
-                    
-                    if verbose:
-                        print(f"==> JPEG decoded image.shape: {image.shape}, original JPEG size: {jpeg_length} bytes")
-                    
-                    # Process data
-                    if have_color_data:
-                        self.handle_color_image(image)
-                    # if have_depth_data:
-                    #     self.handle_depth_image(image_data)
-                  
-                    end_time = time.time()
-                    loop_fps = 1.0 / (end_time - start_time)
-                    
-                    print_info = f"rgb: {have_color_data} | depth: {have_depth_data} | fps: {loop_fps:.2f} | jpeg_size: {jpeg_length}B"
-                    self._update_performance_metrics(print_info)
+                        start_time = time.time()
 
-                except zmq.Again:
-                    # 没有消息，继续
-                    time.sleep(0.001)
-                    continue
+                        # 接收消息
+                        message = self.socket.recv()
+                        # print(f"[VisionClient] Received message of size {len(message)} bytes.")
+                        
+                        if message is not None:
+                            np_img = np.frombuffer(message, dtype=np.uint8)
+                            bgr_img = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
+
+                            if bgr_img is not None:
+                                # Convert BGR to RGB
+                                rgb_img = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2RGB)
+                                self.handle_color_image(rgb_img)
+                            else:
+                                print(f"[VisionClient] Failed to decode image. Message len: {len(message)}")
+                    
+                        end_time = time.time()
+                        loop_fps = 1.0 / (end_time - start_time) if (end_time - start_time) > 0 else 0
+                        
+                        print_info = f"fps: {loop_fps:.2f}"
+                        self._update_performance_metrics(print_info)
+
+                    except Exception as e:
+                        print(f"[VisionClient] Error receiving/decoding: {e}")
+                else:
+                     # Timeout, continue or sleep slightly?
+                     # poller.poll already waited up to 100ms.
+                     pass
 
         except KeyboardInterrupt:
             print("[VisionClient] Interrupted by user.")
@@ -288,64 +256,3 @@ class VisionClient:
             print(f"[VisionClient] Error: {e}")
         finally:
             self._close()
-
-
-if __name__ == "__main__":
-    # Example usage for single camera (640x480):
-    from multiprocessing import shared_memory, Array, Lock
-    import threading
-    
-    # Create shared memory for single camera - 640x480 image
-    num_cameras = 2
-    image_shape = (360, 640 * num_cameras, 3)  # Height, Width, Channels for OpenCV format
-    image_shared_memory = shared_memory.SharedMemory(create=True, size=int(np.prod(image_shape) * np.uint8().itemsize * num_cameras))
-    image_array = np.ndarray(image_shape, dtype=np.uint8, buffer=image_shared_memory.buf)
-    
-    # Create shared memory for depth - same resolution as RGB
-    depth_shape = (360, 640)
-    depth_shared_memory = shared_memory.SharedMemory(create=True, size=int(np.prod(depth_shape) * np.float32().itemsize))
-    depth_array = np.ndarray(depth_shape, dtype=np.float32, buffer=depth_shared_memory.buf)
-    
-    # Display settings for single camera
-    image_show = True
-    depth_show = True
-
-    client = VisionClient(
-        server_address="192.168.123.164",  # or "127.0.0.1"
-        port=5556,
-        img_shape=image_shape,
-        img_shm_name=image_shared_memory.name,
-        depth_shape=depth_shape,
-        depth_shm_name=depth_shared_memory.name,
-        image_show=image_show,
-        depth_show=depth_show,
-        unit_test=True
-    )
-    
-    vision_thread = threading.Thread(target=client.receive_process, daemon=True)
-    vision_thread.start()
-    
-    # Main loop
-    try:
-        frame_count = 0
-        while True:
-            time.sleep(0.01)
-            frame_count += 1
-            
-            # Access the shared memory arrays if needed
-            # color_data = image_array.copy()
-            # depth_data = depth_array.copy()
-            
-    except KeyboardInterrupt:
-        print("[VisionClient] Interrupted by user.")
-    except Exception as e:
-        print(f"[VisionClient] Error: {e}")
-    finally:
-        # Clean up shared memory
-        image_shared_memory.unlink()
-        depth_shared_memory.unlink()
-        
-        image_shared_memory.close()
-        depth_shared_memory.close()
-
-    

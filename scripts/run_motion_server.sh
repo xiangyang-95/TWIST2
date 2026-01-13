@@ -1,8 +1,11 @@
 #!/bin/bash
 
-script_dir=$(dirname $(realpath $0))
-# motion_file="${script_dir}/assets/example_motions/0807_yanjie_walk_005.pkl"
-motion_file="${script_dir}/assets/example_motions/0807_yanjie_walk_001.pkl"
+
+
+
+source ~/miniforge3/bin/activate twist2
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/user/miniforge3/envs/twist2/lib
+motion_file="$PWD/assets/example_motions/0807_yanjie_walk_001.pkl"
 
 
 # Change to deploy_real directory
