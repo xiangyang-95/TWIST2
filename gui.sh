@@ -1,4 +1,4 @@
+#!/bin/bash
 
-source ~/miniconda3/bin/activate twist2
-
+conda activate twist2
 python gui.py
