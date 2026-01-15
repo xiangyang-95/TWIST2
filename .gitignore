@@ -40,6 +40,9 @@ body_models/
 
 joao_data/
 
+deploy_real/datasets
+lerobot/lerobot_twist_dataset
+lerobot/outputs
 
 ubisoft-laforge-animation-dataset/
 

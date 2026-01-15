@@ -235,7 +235,6 @@ class StateMachine:
         """Check if state has changed since last update"""
         return self.state != self.previous_state
     
-    
     def set_current_mimic_obs(self, mimic_obs):
         """Update current mimic obs"""
         self.current_mimic_obs = mimic_obs.copy() if mimic_obs is not None else None
@@ -255,7 +254,6 @@ class StateMachine:
     def get_current_state(self):
         return self.state
     
-
     def get_velocity_commands(self):
         return self.velocity_commands.copy()
         
@@ -548,6 +546,7 @@ class XRobotTeleopToRobot:
                 last_obs_35d = self.state_machine.last_mimic_obs[:35] if len(self.state_machine.last_mimic_obs) > 35 else self.state_machine.last_mimic_obs
                 start_interpolation(self.state_machine, last_obs_35d, current_retarget_obs[:35])
                 print("Interpolating from pause to teleop...")
+    
     def _handle_enter_pause(self):
         """Handle entering pause state"""
         if self.state_machine.current_mimic_obs is not None:
@@ -697,7 +696,7 @@ class XRobotTeleopToRobot:
         self.setup_rate_limiter()
 
         print("Teleop state machine initialized. Controls:")
-        print("- Right controller key_one: Cycle through idle -> teleop -> pause -> teleop...")
+        print("- Press Key A to: Cycle through idle -> teleop -> pause -> teleop...")
         print("- Left controller key_one: Exit program")
         print("- Left controller axis_click: Emergency stop - kills sim2real.sh process")
         print("- Left controller axis: Control root xy velocity")

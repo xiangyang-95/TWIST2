@@ -265,13 +265,16 @@ class RealTimePolicyController:
                     self.redis_pipeline.set("state_hand_right_unitree_g1_with_hands", json.dumps(np.zeros(7).tolist()))
                     self.redis_pipeline.set("state_neck_unitree_g1_with_hands", json.dumps(np.zeros(2).tolist()))
                     self.redis_pipeline.set("t_state", int(time.time() * 1000)) # current timestamp in ms
-                    self.redis_pipeline.execute()
+                    redis_results = self.redis_pipeline.execute()
+                    print(f"Current robot state: {state_body}")
 
                     # Get mimic obs from Redis
                     keys = ["action_body_unitree_g1_with_hands", "action_hand_left_unitree_g1_with_hands", "action_hand_right_unitree_g1_with_hands", "action_neck_unitree_g1_with_hands"]
                     for key in keys:
                         self.redis_pipeline.get(key)
                     redis_results = self.redis_pipeline.execute()
+                    print(f"Current received actions: {redis_results}")
+                    
                     action_mimic = json.loads(redis_results[0])
                     action_left_hand = json.loads(redis_results[1])
                     action_right_hand = json.loads(redis_results[2])

@@ -246,10 +246,6 @@ bash run_motion_server.sh
 bash teleop.sh
 ```
 
-
-
- 
-
 **4**. Sim2real verification. If you are not familiar with the deployment on physical robot, you can refer to [unitree_g1.md](./unitree_g1.md) or [unitree_g1.zh.md](./unitree_g1.zh.md) for more details.
 
 More specifically, the pipeline for sim2real deploy is:
@@ -264,9 +260,6 @@ bash sim2real.sh
 ```
 - please set the network interface name to your own that connects to the robot in `sim2real.sh`.
 
-
-
-
 Similarly, you run the low-level controller first and then control the robot via high-level motion server, i.e.,
 1) offline motion streaming:
 ```bash
@@ -276,7 +269,6 @@ bash run_motion_server.sh
 ```bash
 bash teleop.sh
 ```
-
 
 **5**. GUI interface for everything. Check `gui.sh` for more details.
 ```bash

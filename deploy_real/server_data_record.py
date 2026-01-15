@@ -128,7 +128,7 @@ def main(args):
     speaker = Speaker()
     prev_button_pressed = False
     print("Press Y button on the left controller to start/save recording.")
-    
+
     try:
         while running:
             start_time = time.time()
@@ -284,7 +284,7 @@ if __name__ == "__main__":
         description="Record 'mimic_obs' from Redis.")
     cur_time = datetime.now().strftime("%Y%m%d_%H%M")
     parser.add_argument(
-        "--data_folder", default=f"./deploy_real/twist2_demonstration", help="data folder")
+        "--data_folder", default=f"./datasets", help="data folder")
     parser.add_argument("--task_name", default=f"{cur_time}", help="task name")
     parser.add_argument("--frequency", default=30, type=int)
     parser.add_argument("--robot", default="unitree_g1",

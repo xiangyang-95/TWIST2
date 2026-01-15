@@ -34,14 +34,17 @@ def smooth(x, box_pts, device):
 
 
 class MotionLib:
-    def __init__(self, motion_file, device, 
-                 motion_decompose=False, 
-                 motion_smooth=True, 
-                 motion_height_adjust=False,
-                 sample_ratio=1.0 # only sample a portion of the motion
-                 ):
-        self._device = device
+    def __init__(
+            self, 
+            motion_file, 
+            device, 
+            motion_decompose=False, 
+            motion_smooth=True, 
+            motion_height_adjust=False,
+            sample_ratio=1.0 # only sample a portion of the motion
+        ):
 
+        self._device = device
         # motion augmentation by decomposing long motion into short motions
         self._motion_decompose = motion_decompose
         # motion smoothing
@@ -50,7 +53,6 @@ class MotionLib:
         self._motion_height_adjust = motion_height_adjust
         # sample a portion of the motion
         self._sample_ratio = sample_ratio
-        
         # load motions
         self._load_motions(motion_file)
         
@@ -63,7 +65,6 @@ class MotionLib:
         self._motion_num_frames = []
         self._motion_lengths = []
         self._motion_files = []
-        
         self._motion_root_pos_delta = []
         self._motion_root_pos = []
         self._motion_root_rot = []
@@ -78,7 +79,6 @@ class MotionLib:
         
         motion_files, motion_weights = self._fetch_motion_files(motion_file)
         num_motion_files = len(motion_files)
-        
         num_sub_motions_total = 0
             
         for i in tqdm(range(num_motion_files), desc="[MotionLib] Loading motions"):

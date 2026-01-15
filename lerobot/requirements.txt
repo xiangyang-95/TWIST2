@@ -1,0 +1,3 @@
+lerobot[all]
+redis
+logging_mp

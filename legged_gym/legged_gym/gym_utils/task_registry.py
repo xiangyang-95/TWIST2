@@ -146,24 +146,20 @@ class TaskRegistry():
         
         train_cfg_dict = class_to_dict(train_cfg)
         runner_class = eval(train_cfg.runner.runner_class_name)
-        runner = runner_class(env, 
-                                train_cfg_dict, 
-                                log_dir, 
-                                device=args.rl_device, **kwargs)
-        #save resume path before creating a new log_dir
+        runner = runner_class(
+            env, 
+            train_cfg_dict, 
+            log_dir, 
+            device=args.rl_device, **kwargs
+        )
+        
         resume = train_cfg.runner.resume
         if args.resumeid:
             log_root = LEGGED_GYM_ROOT_DIR + f"/logs/{args.proj_name}/" + args.resumeid
             resume = True
         if resume:
-            # load previously trained model
-            print(log_root)
-            print(train_cfg.runner.load_run)
-            # load_root = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', "rough_a1", train_cfg.runner.load_run)
             resume_path = get_load_path(log_root, load_run=train_cfg.runner.load_run, checkpoint=train_cfg.runner.checkpoint)
             runner.load(resume_path)
-            # if not train_cfg.policy.continue_from_last_std:
-            #     runner.alg.actor_critic.reset_std(train_cfg.policy.init_noise_std, 19, device=runner.device)
 
         if "return_log_dir" in kwargs:
             return runner, train_cfg, os.path.dirname(resume_path)
