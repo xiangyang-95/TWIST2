@@ -334,22 +334,30 @@ class StateMachine:
         self.smooth_history = []
     
     def _emergency_stop(self):
-        """Emergency stop: kill sim2real.sh process (server_low_level_g1_real_future.py)"""
+        """Emergency stop: kill sim2real.sh process (server_low_level_g1_real.py)"""
         try:
             print("[EMERGENCY STOP] Killing sim2real.sh process...")
-            # Kill sim2real.sh which contains server_low_level_g1_real_future.py
-            result = subprocess.run(['pkill', '-f', 'sim2real.sh'], 
-                                  capture_output=True, text=True, timeout=5)
+            # Kill sim2real.sh which contains server_low_level_g1_real.py
+            result = subprocess.run(
+                ['pkill', '-f', 'sim2real.sh'], 
+                capture_output=True, 
+                text=True, 
+                timeout=5
+            )
             if result.returncode == 0:
                 print("[EMERGENCY STOP] Successfully killed sim2real.sh process")
             else:
                 print(f"[EMERGENCY STOP] pkill returned code {result.returncode}")
 
             # Also try to kill the specific server script directly as backup
-            result2 = subprocess.run(['pkill', '-f', 'server_low_level_g1_real_future.py'], 
-                                   capture_output=True, text=True, timeout=5)
+            result2 = subprocess.run(
+                ['pkill', '-f', 'server_low_level_g1_real.py'], 
+                capture_output=True, 
+                text=True, 
+                timeout=5
+            )
             if result2.returncode == 0:
-                print("[EMERGENCY STOP] Successfully killed server_low_level_g1_real_future.py process")
+                print("[EMERGENCY STOP] Successfully killed server_low_level_g1_real.py process")
             else:
                 print(f"[EMERGENCY STOP] pkill for server script returned code {result2.returncode}")
                 

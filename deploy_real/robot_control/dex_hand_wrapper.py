@@ -1,12 +1,6 @@
 # Updated for dex3-1 using new unified unitree_interface
 import sys
 import os
-
-# Add unitree_sdk2 python binding path
-unitree_sdk2_path = "/home/ANT.AMAZON.COM/yanjieze/lab42/src/unitree_sdk2/build/lib"
-if os.path.exists(unitree_sdk2_path):
-    sys.path.insert(0, unitree_sdk2_path)
-
 import unitree_interface as ui
 import numpy as np
 from enum import IntEnum
