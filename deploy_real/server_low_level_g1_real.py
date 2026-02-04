@@ -24,7 +24,6 @@ except ImportError:
 
 class OnnxPolicyWrapper:
     """Minimal wrapper so ONNXRuntime policies mimic TorchScript call signature."""
-
     def __init__(self, session, input_name, output_index=0):
         self.session = session
         self.input_name = input_name
@@ -32,7 +31,7 @@ class OnnxPolicyWrapper:
 
     def __call__(self, obs_tensor: torch.Tensor) -> torch.Tensor:
         if isinstance(obs_tensor, torch.Tensor):
-            obs_np = obs_tensor.detach().cpu().numpy()
+            obs_np = obs_tensor.detach().numpy()
         else:
             obs_np = np.asarray(obs_tensor, dtype=np.float32)
         outputs = self.session.run(None, {self.input_name: obs_np})
@@ -77,13 +76,34 @@ def load_onnx_policy(policy_path: str, device: str) -> OnnxPolicyWrapper:
         raise ImportError("onnxruntime is required for ONNX policy inference but is not installed.")
     providers = []
     available = ort.get_available_providers()
+    print(f"Available providers for ONNXRuntime: {available}")
     if device.startswith('cuda'):
         if 'CUDAExecutionProvider' in available:
             providers.append('CUDAExecutionProvider')
         else:
             print("CUDAExecutionProvider not available in onnxruntime; falling back to CPUExecutionProvider.")
-    providers.append('CPUExecutionProvider')
-    session = ort.InferenceSession(policy_path, providers=providers)
+            providers.append('CPUExecutionProvider')
+    elif device.startswith("CPU") or device.startswith("GPU") or device.startswith("NPU"):
+        if 'OpenVINOExecutionProvider' in available:
+            use_openvino = True
+            # providers.append("OpenVINOExecutionProvider")
+        else:
+            print("OpenVINOExecutionProvider not available in onnxruntime; falling back to CPUExecutionProvider.")
+            providers.append('CPUExecutionProvider')
+    else:
+        providers.append('CPUExecutionProvider')
+
+    if use_openvino:
+        print("Using OpenVINO providers")
+        options = {
+            "device_type": device,
+        }
+        providers.append(("OpenVINOExecutionProvider", options))
+
+    session = ort.InferenceSession(
+        policy_path, 
+        providers=providers
+    )
     input_name = session.get_inputs()[0].name
     print(f"ONNX policy loaded from {policy_path} using providers: {session.get_providers()}")
     return OnnxPolicyWrapper(session, input_name)
@@ -243,7 +263,6 @@ class RealTimePolicyController(object):
                     action_mimic = self.body_smoother.smooth(np.array(action_mimic, dtype=np.float32))
                     action_mimic = action_mimic.tolist()
             
-                
                 if self.use_hand:
                     action_hand_left = np.array(action_hand_left, dtype=np.float32)
                     action_hand_right = np.array(action_hand_right, dtype=np.float32)
@@ -262,17 +281,15 @@ class RealTimePolicyController(object):
                 
                 assert obs_buf.shape[0] == self.total_obs_size, f"Expected {self.total_obs_size} obs, got {obs_buf.shape[0]}"
                 
-                obs_tensor = torch.from_numpy(obs_buf).float().unsqueeze(0).to(self.device)
+                obs_tensor = torch.from_numpy(obs_buf).float().unsqueeze(0) 
                 with torch.no_grad():
-                    raw_action = self.policy(obs_tensor).cpu().numpy().squeeze()
+                    raw_action = self.policy(obs_tensor).numpy().squeeze()
                 
                 self.last_action = raw_action.copy()
-
                 raw_action = np.clip(raw_action, -10.0, 10.0)
                 target_dof_pos = self.default_dof_pos + raw_action * self.action_scale
 
                 # self.redis_client.set("action_low_level_unitree_g1", json.dumps(raw_action.tolist()))
-
                 kp_scale = 1.0
                 kd_scale = 1.0
                 self.env.send_robot_action(target_dof_pos, kp_scale, kd_scale)
@@ -368,7 +385,6 @@ def main():
     print("Press Ctrl+C to stop at any time.")
     print("Use the remote controller [Select] button to exit.")
     print("="*50 + "\n")
-    
     controller = RealTimePolicyController(
         policy_path=args.policy,
         config_path=args.config,
@@ -378,9 +394,7 @@ def main():
         record_proprio=args.record_proprio,
         smooth_body=args.smooth_body,
     )
-    
     controller.run()
-    
 
 
 if __name__ == "__main__":

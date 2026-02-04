@@ -42,7 +42,7 @@ class TeleimagerClient:
 
     def receive_process(self):
         while True:
-            head_img, head_img_fps = self.client.get_head_frame()
+            head_img, head_img_fps = self.client.subscribe_camera_frame('forehead_camera')
             if head_img is not None:
                 np.copyto(self.img_array, head_img)
             time.sleep(0.001)  # slight delay to prevent busy waiting
@@ -52,9 +52,9 @@ def main(args):
     # Connect to Redis with connection pool for better performance
     try:
         print(
-            f"Connecting to Redis at {args.robot_ip}:6379, DB=0 with connection pool...")
+            f"Connecting to Redis at {args.redis_ip}:6379, DB=0 with connection pool...")
         redis_pool = redis.ConnectionPool(
-            host=args.robot_ip,
+            host=args.redis_ip,
             port=6379,
             db=0,
             max_connections=10,
@@ -84,7 +84,7 @@ def main(args):
     # Initialize OpenCV window
     # Create shared memory for single camera - 640x480 image
     # Height, Width, Channels for OpenCV format
-    image_shape = (480, 640*num_cameras, 3)
+    image_shape = (720, 1280*num_cameras, 3)
     image_shared_memory = shared_memory.SharedMemory(create=True, size=int(
         np.prod(image_shape) * np.uint8().itemsize * num_cameras))
     image_array = np.ndarray(image_shape, dtype=np.uint8,
@@ -287,10 +287,15 @@ if __name__ == "__main__":
         "--data_folder", default=f"./datasets", help="data folder")
     parser.add_argument("--task_name", default=f"{cur_time}", help="task name")
     parser.add_argument("--frequency", default=30, type=int)
-    parser.add_argument("--robot", default="unitree_g1",
-                        choices=["unitree_g1"], help="robot name")
     parser.add_argument(
-        "--robot_ip", default="192.168.123.164", help="robot ip")
+        "--robot", default="unitree_g1", choices=["unitree_g1"], help="robot name"
+    )
+    parser.add_argument(
+        "--robot_ip", default="192.168.123.164", help="robot ip"
+    )
+    parser.add_argument(
+        "--redis_ip", default="localhost", help="REDIS server instance"
+    )
 
     args = parser.parse_args()
 

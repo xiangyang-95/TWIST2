@@ -20,7 +20,6 @@ except ImportError:
 
 class OnnxPolicyWrapper:
     """Minimal wrapper so ONNXRuntime policies mimic TorchScript call signature."""
-
     def __init__(self, session, input_name, output_index=0):
         self.session = session
         self.input_name = input_name
@@ -28,9 +27,10 @@ class OnnxPolicyWrapper:
 
     def __call__(self, obs_tensor: torch.Tensor) -> torch.Tensor:
         if isinstance(obs_tensor, torch.Tensor):
-            obs_np = obs_tensor.detach().cpu().numpy()
+            obs_np = obs_tensor.detach().numpy()
         else:
             obs_np = np.asarray(obs_tensor, dtype=np.float32)
+
         outputs = self.session.run(None, {self.input_name: obs_np})
         result = outputs[self.output_index]
         if not isinstance(result, np.ndarray):
@@ -41,19 +41,41 @@ class OnnxPolicyWrapper:
 def load_onnx_policy(policy_path: str, device: str) -> OnnxPolicyWrapper:
     if ort is None:
         raise ImportError("onnxruntime is required for ONNX policy inference but is not installed.")
+
+    use_openvino = False
     providers = []
     available = ort.get_available_providers()
+    print(f"Available providers for ONNXRuntime: {available}")
     if device.startswith('cuda'):
         if 'CUDAExecutionProvider' in available:
             providers.append('CUDAExecutionProvider')
         else:
             print("CUDAExecutionProvider not available in onnxruntime; falling back to CPUExecutionProvider.")
-    providers.append('CPUExecutionProvider')
-    session = ort.InferenceSession(policy_path, providers=providers)
+            providers.append('CPUExecutionProvider')
+    elif device.startswith("CPU") or device.startswith("GPU") or device.startswith("NPU"):
+        if 'OpenVINOExecutionProvider' in available:
+            use_openvino = True
+            # providers.append("OpenVINOExecutionProvider")
+        else:
+            print("OpenVINOExecutionProvider not available in onnxruntime; falling back to CPUExecutionProvider.")
+            providers.append('CPUExecutionProvider')
+    else:
+        providers.append('CPUExecutionProvider')
+    
+    if use_openvino:
+        print("Using OpenVINO providers")
+        options = {
+            "device_type": device,
+        }
+        providers.append(("OpenVINOExecutionProvider", options))
+
+    session = ort.InferenceSession(
+        policy_path, 
+        providers=providers
+    )
     input_name = session.get_inputs()[0].name
     print(f"ONNX policy loaded from {policy_path} using providers: {session.get_providers()}")
     return OnnxPolicyWrapper(session, input_name)
-
 
 class RealTimePolicyController:
     def __init__(self, 
@@ -93,8 +115,6 @@ class RealTimePolicyController:
         self.num_actions = 29
         self.sim_duration = 100000.0
         self.sim_dt = 0.001
-        # real frequency = 1 / (decimation * sim_dt)
-        # ==> decimation = 1 / (real frequency * sim_dt)
         self.sim_decimation = 1 / (policy_frequency * self.sim_dt)
         print(f"sim_decimation: {self.sim_decimation}")
 
@@ -102,55 +122,53 @@ class RealTimePolicyController:
 
         # G1 specific configuration
         self.default_dof_pos = np.array([
-                -0.2, 0.0, 0.0, 0.4, -0.2, 0.0,  # left leg (6)
-                -0.2, 0.0, 0.0, 0.4, -0.2, 0.0,  # right leg (6)
-                0.0, 0.0, 0.0, # torso (3)
-                0.0, 0.4, 0.0, 1.2, 0.0, 0.0, 0.0, # left arm (7)
-                0.0, -0.4, 0.0, 1.2, 0.0, 0.0, 0.0, # right arm (7)
-            ])
+            -0.2, 0.0, 0.0, 0.4, -0.2, 0.0,  # left leg (6)
+            -0.2, 0.0, 0.0, 0.4, -0.2, 0.0,  # right leg (6)
+            0.0, 0.0, 0.0, # torso (3)
+            0.0, 0.4, 0.0, 1.2, 0.0, 0.0, 0.0, # left arm (7)
+            0.0, -0.4, 0.0, 1.2, 0.0, 0.0, 0.0, # right arm (7)
+        ])
 
         self.mujoco_default_dof_pos = np.concatenate([
             np.array([0, 0, 0.793]),
             np.array([1, 0, 0, 0]),
-             np.array([-0.2, 0.0, 0.0, 0.4, -0.2, 0.0,  # left leg (6)
+            np.array([
+                -0.2, 0.0, 0.0, 0.4, -0.2, 0.0,  # left leg (6)
                 -0.2, 0.0, 0.0, 0.4, -0.2, 0.0,  # right leg (6)
                 0.0, 0.0, 0.0, # torso (3)
                 0.0, 0.2, 0.0, 1.2, 0.0, 0.0, 0.0, # left arm (7)
                 0.0, -0.2, 0.0, 1.2, 0.0, 0.0, 0.0, # right arm (7)
-                ])
+            ])
         ])
 
         self.stiffness = np.array([
-                100, 100, 100, 150, 40, 40,
-                100, 100, 100, 150, 40, 40,
-                150, 150, 150,
-                40, 40, 40, 40, 4.0, 4.0, 4.0,
-                40, 40, 40, 40, 4.0, 4.0, 4.0,
-            ])
+            100, 100, 100, 150, 40, 40,
+            100, 100, 100, 150, 40, 40,
+            150, 150, 150,
+            40, 40, 40, 40, 4.0, 4.0, 4.0,
+            40, 40, 40, 40, 4.0, 4.0, 4.0,
+        ])
         self.damping = np.array([
-                2, 2, 2, 4, 2, 2,
-                2, 2, 2, 4, 2, 2,
-                4, 4, 4,
-                5, 5, 5, 5, 0.2, 0.2, 0.2,
-                5, 5, 5, 5, 0.2, 0.2, 0.2,
-            ])
-
-        
+            2, 2, 2, 4, 2, 2,
+            2, 2, 2, 4, 2, 2,
+            4, 4, 4,
+            5, 5, 5, 5, 0.2, 0.2, 0.2,
+            5, 5, 5, 5, 0.2, 0.2, 0.2,
+        ])
         self.torque_limits = np.array([
-                100, 100, 100, 150, 40, 40,
-                100, 100, 100, 150, 40, 40,
-                150, 150, 150,
-                40, 40, 40, 40, 4.0, 4.0, 4.0,
-                40, 40, 40, 40, 4.0, 4.0, 4.0,
-            ])
-
+            100, 100, 100, 150, 40, 40,
+            100, 100, 100, 150, 40, 40,
+            150, 150, 150,
+            40, 40, 40, 40, 4.0, 4.0, 4.0,
+            40, 40, 40, 40, 4.0, 4.0, 4.0,
+        ])
         self.action_scale = np.array([
-                0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
-                0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
-                0.5, 0.5, 0.5,
-                0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
-                0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
-            ])
+            0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
+            0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
+            0.5, 0.5, 0.5,
+            0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
+            0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
+        ])
 
         self.ankle_idx = [4, 5, 10, 11]
 
@@ -266,14 +284,14 @@ class RealTimePolicyController:
                     self.redis_pipeline.set("state_neck_unitree_g1_with_hands", json.dumps(np.zeros(2).tolist()))
                     self.redis_pipeline.set("t_state", int(time.time() * 1000)) # current timestamp in ms
                     redis_results = self.redis_pipeline.execute()
-                    print(f"Current robot state: {state_body}")
+                    # print(f"Current robot state: {state_body}")
 
                     # Get mimic obs from Redis
                     keys = ["action_body_unitree_g1_with_hands", "action_hand_left_unitree_g1_with_hands", "action_hand_right_unitree_g1_with_hands", "action_neck_unitree_g1_with_hands"]
                     for key in keys:
                         self.redis_pipeline.get(key)
                     redis_results = self.redis_pipeline.execute()
-                    print(f"Current received actions: {redis_results}")
+                    # print(f"Current received actions: {redis_results}")
                     
                     action_mimic = json.loads(redis_results[0])
                     action_left_hand = json.loads(redis_results[1])
@@ -294,9 +312,9 @@ class RealTimePolicyController:
                     assert obs_buf.shape[0] == self.total_obs_size, f"Expected {self.total_obs_size} obs, got {obs_buf.shape[0]}"
                     
                     # Run policy
-                    obs_tensor = torch.from_numpy(obs_buf).float().unsqueeze(0).to(self.device)
+                    obs_tensor = torch.from_numpy(obs_buf).float().unsqueeze(0)
                     with torch.no_grad():
-                        raw_action = self.policy(obs_tensor).cpu().numpy().squeeze()
+                        raw_action = self.policy(obs_tensor).numpy().squeeze()
                     
                     # Measure and track policy execution FPS
                     current_time = time.time()
@@ -437,6 +455,7 @@ def main():
     print(f"  Record proprio: {args.record_proprio}")
     print(f"  Measure FPS: {args.measure_fps}")
     print(f"  Limit FPS: {args.limit_fps}")
+
     controller = RealTimePolicyController(
         xml_file=args.xml,
         policy_path=args.policy,
