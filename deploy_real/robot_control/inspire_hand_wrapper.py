@@ -139,7 +139,6 @@ class InspireHandController:
 
     def _update_left_hand_data(self, data):
         self.left_hand_state_array = np.array(data.angle_act[:Inspire_Num_Motors], dtype=np.int16)
-        print(f"Received left hand data: {self.left_hand_state_array}")
 
     def _update_right_hand_data(self, data):
         self.right_hand_state_array = np.array(data.angle_act[:Inspire_Num_Motors], dtype=np.int16)

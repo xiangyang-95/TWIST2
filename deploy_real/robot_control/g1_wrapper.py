@@ -22,6 +22,44 @@ ContollerMapping ={
     "left": 0x8000
     }
 
+INIT_SEQUENCE = [
+    [
+        0., 0., 0., 0., 0., 0.,
+        0., 0., 0., 0., 0., 0.,
+        0., 0., 0.,
+        0., 0.4, 0., 1.2, 0., 0., 0.,
+        0., -0.4, 0., 1.2, 0., 0., 0.
+    ],
+    [
+        0., 0., 0., 0., 0., 0.,
+        0., 0., 0., 0., 0., 0.,
+        0., 0., 0.,
+        0., 0.985, 0., 1.2, 0., 0., 0.,
+        0., -0.985, 0., 1.2, 0., 0., 0.
+    ],
+    [
+        0., 0., 0., 0., 0., 0.,
+        0., 0., 0., 0., 0., 0.,
+        0., 0., 0.,
+        0., 1.57, 0., 1.2, 0., 0., 0.,
+        0., -1.57, 0., 1.2, 0., 0., 0.
+    ],
+    [
+        0., 0., 0., 0., 0., 0.,
+        0., 0., 0., 0., 0., 0.,
+        0., 0., 0.,
+        0., 1.57, 0., 0.0, 0., 0., 0.,
+        0., -1.57, 0., 0.0, 0., 0., 0.
+    ],
+    [
+        0., 0., 0., 0., 0., 0.,
+        0., 0., 0., 0., 0., 0.,
+        0., 0., 0.,
+        0., 0., 0., -0.3, 0., 0., 0.,
+        0., 0., 0., -0.3, 0., 0., 0.
+    ]
+]
+
 class G1RealWorldEnv:
     def __init__(self, net, config):
         
@@ -66,8 +104,17 @@ class G1RealWorldEnv:
         print("[green]Successfully connected to the robot[/green]")
 
         self.controller_mapping = ContollerMapping
-       
-    
+
+        # Arm SDK mode (optional — set via set_arm_sdk after construction)
+        self.arm_sdk = None
+        self.arm_sdk_joint_indices = None
+
+    def set_arm_sdk(self, arm_sdk, joint_indices):
+        """Enable arm SDK dispatching in send_robot_action."""
+        print("[green]Arm SDK enabled. send_robot_action will dispatch to Arm SDK for specified joints.[/green]")
+        self.arm_sdk = arm_sdk
+        self.arm_sdk_joint_indices = joint_indices
+
     def read_robot_state(self) -> unitree_interface.LowState:
         """Read current robot state"""
         return self.robot.read_low_state()
@@ -80,31 +127,41 @@ class G1RealWorldEnv:
     def send_cmd(self, cmd: unitree_interface.MotorCommand):
         self.robot.write_low_command(cmd)
 
-
     def move_to_default_pos(self):
-        print("[green]Waiting for the start signal to move to default pos...[/green]")
+        print("Waiting for the start signal to move to default pos...")
         while self.read_controller_input().keys != self.controller_mapping["start"]:
             time.sleep(self.config.control_dt)
-        print("[green]Moving to default pos.[/green]")
-        # move time 2s
+        
+        print("Moving to default pos.")
         total_time = 2
         num_step = int(total_time / self.config.control_dt)
-        
-        # record the current pos
-        qpos = self.get_robot_state()[0]
-        tgt_qpos = self.config.default_angles.copy()
-        # move to default pos
-        for i in range(num_step):
-            alpha = i / num_step
-            interp_qpos = qpos * (1 - alpha) + tgt_qpos * alpha
-            self.send_robot_action(interp_qpos)
-            time.sleep(self.config.control_dt)
+        for seq in INIT_SEQUENCE:
+            tgt_qpos = np.array(seq, dtype=np.float32)
+            qpos = self.get_robot_state()[0]
+            for i in range(num_step):
+                alpha = i / num_step
+                interp_qpos = qpos * (1 - alpha) + tgt_qpos * alpha
+                self.send_robot_action(interp_qpos)
+                time.sleep(self.config.control_dt)
+    
+    def move_to_exit_pos(self):
+        print("Moving to exit pos.")
+        total_time = 2
+        num_step = int(total_time / self.config.control_dt)
+        for seq in reversed(INIT_SEQUENCE):
+            tgt_qpos = np.array(seq, dtype=np.float32)
+            qpos = self.get_robot_state()[0]
+            for i in range(num_step):
+                alpha = i / num_step
+                interp_qpos = qpos * (1 - alpha) + tgt_qpos * alpha
+                self.send_robot_action(interp_qpos)
+                time.sleep(self.config.control_dt)
 
     def default_pos_state(self):
-        print("Enter default pos state. Waiting for the Button A signal...")
+        logger.info("Enter default pos state. Waiting for Button A signal...")
         while self.read_controller_input().keys != self.controller_mapping["A"]:
             # keep the default pos
-            default_pos = self.config.default_angles.copy()
+            default_pos = np.array(INIT_SEQUENCE[-1], dtype=np.float32)
             self.send_robot_action(default_pos)
             time.sleep(self.config.control_dt)
     
@@ -129,27 +186,37 @@ class G1RealWorldEnv:
         dof_tau = self.tau_est.copy()
         dof_vol = self.voltage.copy()
 
+        # print(f"Robot state at step {self.counter}:")
+        # print(f"  DOF positions: {dof_pos}")
+        # print(f"  DOF velocities: {dof_vel}")
+        # print(f"  IMU quaternion: {quat}")
+        # print(f"  IMU angular velocity: {ang_vel}")
+        # print(f"  DOF temperatures: {dof_temp}")
+        # print(f"  DOF torques: {dof_tau}")
+        # print(f"  DOF voltages: {dof_vol}")
         return (dof_pos, dof_vel, quat, ang_vel, dof_temp, dof_tau, dof_vol)
     
-
     def send_robot_action(self, target_dof_pos, kp_scale=1.0, kd_scale=1.0):
+        if self.arm_sdk is not None:
+            arm_cmd = self.arm_sdk.create_zero_command()
+            arm_cmd.q_target = [float(target_dof_pos[idx]) for idx in self.arm_sdk_joint_indices]
+            arm_cmd.dq_target = np.zeros_like(target_dof_pos)
+            arm_cmd.kp = [self.config.kps[idx] * kp_scale for idx in self.arm_sdk_joint_indices]
+            arm_cmd.kd = [self.config.kds[idx] * kd_scale for idx in self.arm_sdk_joint_indices]
+            arm_cmd.tau_ff = np.zeros_like(target_dof_pos)
+            arm_cmd.weight = 1.0
+            self.arm_sdk.write_arm_command(arm_cmd)
+        else:
+            cmd = self.robot.create_zero_command()
+            cmd.q_target = target_dof_pos.copy()
+            cmd.dq_target = np.zeros_like(target_dof_pos)
+            kps = [self.config.kps[i] * kp_scale for i in range(len(self.config.kps))]
+            kds = [self.config.kds[i] * kd_scale for i in range(len(self.config.kds))]
+            cmd.kp = kps
+            cmd.kd = kds
+            cmd.tau_ff = np.zeros_like(target_dof_pos)
+            self.send_cmd(cmd)
         
-        # Read current state to get current positions for uncontrolled joints
-        current_state = self.read_robot_state()
-        cmd = self.robot.create_zero_command()
-        
-        cmd.q_target = target_dof_pos.copy()
-        cmd.dq_target = np.zeros_like(target_dof_pos)
-        kps = [self.config.kps[i] * kp_scale for i in range(len(self.config.kps))]
-        kds = [self.config.kds[i] * kd_scale for i in range(len(self.config.kds))]
-        cmd.kp = kps
-        cmd.kd = kds
-        cmd.tau_ff = np.zeros_like(target_dof_pos)
-        self.send_cmd(cmd)
-        return
-        
-
-
     def close(self):
         exit()
 
@@ -157,33 +224,20 @@ if __name__ == "__main__":
     # example usage
     from config import Config
     config = Config("configs/g1.yaml")
-    env = G1RealWorldEnv(net="enp0s31f6", config=config)
-    # measure fps
-    start_time = time.time()
-    while True:
-        state = env.get_robot_state()
-        controller = env.read_controller_input()
-        # for i in range(len(state[0])):
-        #     print(f"dof {i}: {state[0][i]:.2f}", end=" ")
-        # print("--------------------------------")
-      
-        env.move_to_default_pos()
+    net="eno1"
+    env = G1RealWorldEnv(net=net, config=config)
+    test_arm_sdk = True
+    if test_arm_sdk:
+        arm_sdk = unitree_interface.ArmSdkInterface.create_g1_7dof(net, re_init=False)
+        arm_sdk_joint_indices = arm_sdk.get_joint_indices()
+        env.set_arm_sdk(arm_sdk, arm_sdk_joint_indices)
 
-        if controller.keys:
-            print(f"keys: {controller.keys}")
-            print(f"Controller: L_stick=[{controller.lx:.2f}, {controller.ly:.2f}]")
-            if controller.keys == env.controller_mapping["A"]:
-               print("A button pressed")
-            elif controller.keys == env.controller_mapping["B"]:
-                print("B button pressed")
-            elif controller.keys == env.controller_mapping["X"]:
-                print("X button pressed")
-            elif controller.keys == env.controller_mapping["Y"]:
-                print("Y button pressed")
-            else:
-                print("No button pressed")
-        end_time = time.time()
-        fps = 1 / (end_time - start_time)
-        print(f"FPS: {fps:.2f}")
-        start_time = end_time
-        time.sleep(0.1)
+    while True:
+        try:
+            state = env.get_robot_state()
+            controller = env.read_controller_input()
+            env.move_to_default_pos()
+        except KeyboardInterrupt:
+            env.move_to_exit_pos()
+            env.close()
+            break

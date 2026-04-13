@@ -14,6 +14,11 @@ from robot_control.config import Config
 import os
 from data_utils.rot_utils import quatToEuler
 
+try:
+    import unitree_interface
+except ImportError:
+    unitree_interface = None
+
 from robot_control.dex_hand_wrapper import Dex3_1_Controller
 from robot_control.inspire_hand_wrapper import InspireHandController
 
@@ -95,17 +100,20 @@ class RealTimePolicyController(object):
     Real robot controller for TWIST2 policy.
     Based on server_low_level_g1_real.py but adapted for TWIST2 architecture.
     """
-    def __init__(self, 
-                 policy_path,
-                 config_path,
-                 device='cuda',
-                 net='eno1',
-                 use_hand=False,
-                 hand_type='dex3',
-                 left_hand_ip='192.168.123.210',
-                 right_hand_ip='192.168.123.211',
-                 record_proprio=False,
-                 smooth_body=0.0):
+    def __init__(
+        self, 
+        policy_path,
+        config_path,
+        device='cuda',
+        net='eno1',
+        use_hand=False,
+        hand_type='dex3',
+        left_hand_ip='192.168.123.210',
+        right_hand_ip='192.168.123.211',
+        record_proprio=False,
+        smooth_body=0.0,
+        use_arm_sdk=False
+    ):
         self.redis_client = None
         try:
             self.redis_client = redis.Redis(host='localhost', port=6379, db=0)
@@ -175,7 +183,19 @@ class RealTimePolicyController(object):
         else:
             self.body_smoother = None
 
-        
+        # Arm SDK mode: only control arm and waist joints
+        self.use_arm_sdk = use_arm_sdk
+        self.arm_sdk = None
+        self.arm_sdk_joint_indices = None
+        if use_arm_sdk:
+            if unitree_interface is None:
+                raise ImportError("unitree_interface module is required for --use-arm-sdk but could not be imported.")
+            # re_init=False reuses the DDS connection already created by G1RealWorldEnv
+            self.arm_sdk = unitree_interface.ArmSdkInterface.create_g1_7dof(net, re_init=False)
+            self.arm_sdk_joint_indices = self.arm_sdk.get_joint_indices()
+            self.env.set_arm_sdk(self.arm_sdk, self.arm_sdk_joint_indices)
+            print(f"Arm SDK mode enabled (7-DOF). Controlled joint indices: {self.arm_sdk_joint_indices}")
+
     def reset_robot(self):
         print("Press START on remote to move to default position ...")
         self.env.move_to_default_pos()
@@ -287,6 +307,7 @@ class RealTimePolicyController(object):
 
                 kp_scale = 1.0
                 kd_scale = 1.0
+
                 self.env.send_robot_action(target_dof_pos, kp_scale, kd_scale)
                 
                 if self.use_hand:
@@ -356,6 +377,8 @@ def main():
                         help='Record proprioceptive data')
     parser.add_argument('--smooth_body', type=float, default=0.0,
                         help='Smoothing factor for body actions (0.0=no smoothing, 1.0=maximum smoothing)')
+    parser.add_argument('--use_arm_sdk', action='store_true',
+                        help='Use arm SDK to control only arm and waist joints (legs remain under onboard controller)')
     
     args = parser.parse_args()
 
@@ -381,6 +404,7 @@ def main():
         print(f"  Right hand IP: {args.right_hand_ip}")
     print(f"  Record proprio: {args.record_proprio}")
     print(f"  Smooth body: {args.smooth_body}")
+    print(f"  Use arm SDK: {args.use_arm_sdk}")
     
     # 安全提示
     print("\n" + "="*50)
@@ -402,6 +426,7 @@ def main():
         right_hand_ip=args.right_hand_ip,
         record_proprio=args.record_proprio,
         smooth_body=args.smooth_body,
+        use_arm_sdk=args.use_arm_sdk,
     )
     
     controller.run()
