@@ -84,8 +84,8 @@ class FPSMonitor:
         avg_interval = np.mean(recent_intervals)
         avg_fps = 1.0 / avg_interval if avg_interval > 0 else 0.0
         
-        print(f"{self.name} Execution FPS (last {self.quick_print_interval} steps): "
-              f"{avg_fps:.2f} Hz (avg interval: {avg_interval*1000:.2f}ms)")
+        # print(f"{self.name} Execution FPS (last {self.quick_print_interval} steps): "
+        #       f"{avg_fps:.2f} Hz (avg interval: {avg_interval*1000:.2f}ms)")
     
     def _print_detailed_stats(self):
         """Print detailed FPS statistics."""

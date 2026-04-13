@@ -35,6 +35,7 @@ import mujoco.viewer as mjv
 import numpy as np
 from loop_rate_limiters import RateLimiter
 from scipy.spatial.transform import Rotation as R
+from general_motion_retargeting import XRobotStreamer
 from general_motion_retargeting import GeneralMotionRetargeting as GMR
 from general_motion_retargeting import draw_frame
 from general_motion_retargeting import ROBOT_XML_DICT, ROBOT_BASE_DICT
@@ -43,8 +44,6 @@ from rich import print
 from tqdm import tqdm
 import cv2
 import redis
-from rich import print
-from general_motion_retargeting import XRobotStreamer
 
 from data_utils.params import DEFAULT_MIMIC_OBS, DEFAULT_HAND_POSE
 from data_utils.rot_utils import euler_from_quaternion_np, quat_diff_np, quat_rotate_inverse_np
@@ -103,7 +102,6 @@ def extract_mimic_obs_whole_body(qpos, last_qpos, dt=1/30):
     ])
     
     return mimic_obs
-
 
 
 class StateMachine:
@@ -235,7 +233,6 @@ class StateMachine:
         """Check if state has changed since last update"""
         return self.state != self.previous_state
     
-    
     def set_current_mimic_obs(self, mimic_obs):
         """Update current mimic obs"""
         self.current_mimic_obs = mimic_obs.copy() if mimic_obs is not None else None
@@ -255,7 +252,6 @@ class StateMachine:
     def get_current_state(self):
         return self.state
     
-
     def get_velocity_commands(self):
         return self.velocity_commands.copy()
         
@@ -336,22 +332,30 @@ class StateMachine:
         self.smooth_history = []
     
     def _emergency_stop(self):
-        """Emergency stop: kill sim2real.sh process (server_low_level_g1_real_future.py)"""
+        """Emergency stop: kill sim2real.sh process (server_low_level_g1_real.py)"""
         try:
             print("[EMERGENCY STOP] Killing sim2real.sh process...")
-            # Kill sim2real.sh which contains server_low_level_g1_real_future.py
-            result = subprocess.run(['pkill', '-f', 'sim2real.sh'], 
-                                  capture_output=True, text=True, timeout=5)
+            # Kill sim2real.sh which contains server_low_level_g1_real.py
+            result = subprocess.run(
+                ['pkill', '-f', 'sim2real.sh'], 
+                capture_output=True, 
+                text=True, 
+                timeout=5
+            )
             if result.returncode == 0:
                 print("[EMERGENCY STOP] Successfully killed sim2real.sh process")
             else:
                 print(f"[EMERGENCY STOP] pkill returned code {result.returncode}")
 
             # Also try to kill the specific server script directly as backup
-            result2 = subprocess.run(['pkill', '-f', 'server_low_level_g1_real_future.py'], 
-                                   capture_output=True, text=True, timeout=5)
+            result2 = subprocess.run(
+                ['pkill', '-f', 'server_low_level_g1_real.py'], 
+                capture_output=True, 
+                text=True, 
+                timeout=5
+            )
             if result2.returncode == 0:
-                print("[EMERGENCY STOP] Successfully killed server_low_level_g1_real_future.py process")
+                print("[EMERGENCY STOP] Successfully killed server_low_level_g1_real.py process")
             else:
                 print(f"[EMERGENCY STOP] pkill for server script returned code {result2.returncode}")
                 
@@ -399,7 +403,7 @@ class XRobotTeleopToRobot:
             expected_fps=self.target_fps,
             name="Teleop Loop"
         )
-
+        self.hand_type = "inspire"
 
     def setup_teleop_data_streamer(self):
         """Initialize and start the teleop data streamer"""
@@ -548,6 +552,7 @@ class XRobotTeleopToRobot:
                 last_obs_35d = self.state_machine.last_mimic_obs[:35] if len(self.state_machine.last_mimic_obs) > 35 else self.state_machine.last_mimic_obs
                 start_interpolation(self.state_machine, last_obs_35d, current_retarget_obs[:35])
                 print("Interpolating from pause to teleop...")
+    
     def _handle_enter_pause(self):
         """Handle entering pause state"""
         if self.state_machine.current_mimic_obs is not None:
@@ -629,7 +634,11 @@ class XRobotTeleopToRobot:
         
         # Send hand action to redis
         if self.redis_client is not None:
-            hand_left_pose, hand_right_pose = self.state_machine.get_hand_pose(self.robot_name)
+            if self.hand_type == "inspire":
+                hand_left_pose, hand_right_pose = self.state_machine.get_hand_pose("unitree_g1_with_inspire_hands")
+                # print("Using inspire hand poses: ", hand_left_pose, hand_right_pose)
+            else:
+                hand_left_pose, hand_right_pose = self.state_machine.get_hand_pose(self.robot_name)
             self.redis_pipeline.set("action_hand_left_unitree_g1_with_hands", json.dumps(hand_left_pose.tolist()))
             self.redis_pipeline.set("action_hand_right_unitree_g1_with_hands", json.dumps(hand_right_pose.tolist()))
         
@@ -683,8 +692,6 @@ class XRobotTeleopToRobot:
                     self.send_to_redis(interp_obs, neck_data_to_send)
                 viewer.sync()
                 self.rate.sleep()
-                
-
 
     def initialize_all_systems(self):
         """Initialize all required systems"""
@@ -697,7 +704,7 @@ class XRobotTeleopToRobot:
         self.setup_rate_limiter()
 
         print("Teleop state machine initialized. Controls:")
-        print("- Right controller key_one: Cycle through idle -> teleop -> pause -> teleop...")
+        print("- Press Key A to: Cycle through idle -> teleop -> pause -> teleop...")
         print("- Left controller key_one: Exit program")
         print("- Left controller axis_click: Emergency stop - kills sim2real.sh process")
         print("- Left controller axis: Control root xy velocity")

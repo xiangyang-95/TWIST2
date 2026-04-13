@@ -87,11 +87,17 @@ class EpisodeWriter():
         self.episode_dir = os.path.join(self.task_dir, f"episode_{str(self.episode_id).zfill(4)}")
         os.makedirs(self.episode_dir, exist_ok=True)
         
+        # Create a directory for each image key in data_keys
+        self.img_dirs = {}
+        for key in self.data_keys:
+            img_dir = os.path.join(self.episode_dir, key)
+            os.makedirs(img_dir, exist_ok=True)
+            self.img_dirs[key] = img_dir
+            print(f"==> {key}_dir: {img_dir}")
+
+        # Backward compatibility
         if "rgb" in self.data_keys:
-            self.rgb_dir = os.path.join(self.episode_dir, 'rgb')
-            os.makedirs(self.rgb_dir, exist_ok=True)
-            print(f"==> rgb_dir: {self.rgb_dir}")
-       
+            self.rgb_dir = self.img_dirs["rgb"]
 
         self.json_path = os.path.join(self.episode_dir, 'data.json')
 
@@ -147,13 +153,15 @@ class EpisodeWriter():
         # low level action
         action_low_level = item_data.get('action_low_level', None)
 
-        # Save images
-        if rgb is not None:
-            color_name = f'{str(idx).zfill(6)}.jpg'
-            save_path = os.path.join(self.rgb_dir, color_name)
-            if not cv2.imwrite(save_path, rgb):
-                print(f"Failed to save rgb image.")
-            item_data['rgb'] = str(Path(save_path).relative_to(Path(self.json_path).parent))
+        # Save images for all image keys in data_keys
+        for key in self.data_keys:
+            img = item_data.get(key, None)
+            if img is not None and isinstance(img, np.ndarray):
+                img_name = f'{str(idx).zfill(6)}.jpg'
+                save_path = os.path.join(self.img_dirs[key], img_name)
+                if not cv2.imwrite(save_path, img):
+                    print(f"Failed to save {key} image.")
+                item_data[key] = str(Path(save_path).relative_to(Path(self.json_path).parent))
             
                 
         # state and action are directly saved to the episode_data

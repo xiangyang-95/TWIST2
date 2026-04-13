@@ -15,6 +15,7 @@ import os
 from data_utils.rot_utils import quatToEuler
 
 from robot_control.dex_hand_wrapper import Dex3_1_Controller
+from robot_control.inspire_hand_wrapper import InspireHandController
 
 try:
     import onnxruntime as ort
@@ -100,6 +101,9 @@ class RealTimePolicyController(object):
                  device='cuda',
                  net='eno1',
                  use_hand=False,
+                 hand_type='dex3',
+                 left_hand_ip='192.168.123.210',
+                 right_hand_ip='192.168.123.211',
                  record_proprio=False,
                  smooth_body=0.0):
         self.redis_client = None
@@ -114,7 +118,15 @@ class RealTimePolicyController(object):
         self.env = G1RealWorldEnv(net=net, config=self.config)
         self.use_hand = use_hand
         if use_hand:
-            self.hand_ctrl = Dex3_1_Controller(net, re_init=False)
+            if hand_type == 'inspire':
+                self.hand_ctrl = InspireHandController(
+                    net=net,
+                    dds_domain_id=0,
+                    left_hand_ip=left_hand_ip,
+                    right_hand_ip=right_hand_ip,
+                )
+            else:  # default: dex3
+                self.hand_ctrl = Dex3_1_Controller(net, re_init=False)
 
         self.device = device
         self.policy = load_onnx_policy(policy_path, device)
@@ -220,8 +232,8 @@ class RealTimePolicyController(object):
                 if self.use_hand:
                     left_hand_state, right_hand_state = self.hand_ctrl.get_hand_state()
                     lh_pos, rh_pos, lh_temp, rh_temp, lh_tau, rh_tau = self.hand_ctrl.get_hand_all_state()
-                    hand_left_json = json.dumps(left_hand_state.tolist())
-                    hand_right_json = json.dumps(right_hand_state.tolist())
+                    hand_left_json = json.dumps(left_hand_state.tolist() if hasattr(left_hand_state, 'tolist') else list(left_hand_state))
+                    hand_right_json = json.dumps(right_hand_state.tolist() if hasattr(right_hand_state, 'tolist') else list(right_hand_state))
                     self.redis_pipeline.set("state_hand_left_unitree_g1_with_hands", hand_left_json)
                     self.redis_pipeline.set("state_hand_right_unitree_g1_with_hands", hand_right_json)
                 
@@ -245,8 +257,8 @@ class RealTimePolicyController(object):
             
                 
                 if self.use_hand:
-                    action_hand_left = np.array(action_hand_left, dtype=np.float32)
-                    action_hand_right = np.array(action_hand_right, dtype=np.float32)
+                    action_hand_left  = np.array(action_hand_left,  dtype=np.float32)[:self.hand_ctrl.num_motors]
+                    action_hand_right = np.array(action_hand_right, dtype=np.float32)[:self.hand_ctrl.num_motors]
                 else:
                     action_hand_left = np.zeros(7, dtype=np.float32)
                     action_hand_right = np.zeros(7, dtype=np.float32)
@@ -334,6 +346,12 @@ def main():
                         help='Network interface for robot communication')
     parser.add_argument('--use_hand', action='store_true',
                         help='Enable hand control')
+    parser.add_argument('--hand_type', type=str, default='dex3', choices=['dex3', 'inspire'],
+                        help='Hand type to use: dex3 (Unitree Dex3-1) or inspire (Inspire FTP)')
+    parser.add_argument('--left_hand_ip', type=str, default='192.168.123.210',
+                        help='Left Inspire hand IP address (inspire hand only)')
+    parser.add_argument('--right_hand_ip', type=str, default='192.168.123.211',
+                        help='Right Inspire hand IP address (inspire hand only)')
     parser.add_argument('--record_proprio', action='store_true',
                         help='Record proprioceptive data')
     parser.add_argument('--smooth_body', type=float, default=0.0,
@@ -357,6 +375,10 @@ def main():
     print(f"  Device: {args.device}")
     print(f"  Network interface: {args.net}")
     print(f"  Use hand: {args.use_hand}")
+    print(f"  Hand type: {args.hand_type}")
+    if args.use_hand and args.hand_type == 'inspire':
+        print(f"  Left hand IP: {args.left_hand_ip}")
+        print(f"  Right hand IP: {args.right_hand_ip}")
     print(f"  Record proprio: {args.record_proprio}")
     print(f"  Smooth body: {args.smooth_body}")
     
@@ -375,6 +397,9 @@ def main():
         device=args.device,
         net=args.net,
         use_hand=args.use_hand,
+        hand_type=args.hand_type,
+        left_hand_ip=args.left_hand_ip,
+        right_hand_ip=args.right_hand_ip,
         record_proprio=args.record_proprio,
         smooth_body=args.smooth_body,
     )

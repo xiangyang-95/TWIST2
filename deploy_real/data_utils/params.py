@@ -1,5 +1,7 @@
 import numpy as np
 
+DEFAULT_THUMB_ANGLE = 0.15
+
 DEFAULT_MIMIC_OBS_G1 = np.concatenate([
                     np.array([0, 0]), # xy velocity
                     np.array([0.8]), # z position
@@ -8,7 +10,7 @@ DEFAULT_MIMIC_OBS_G1 = np.concatenate([
                     # 29 dof
                     np.array([-0.2, 0.0, 0.0, 0.4, -0.2, 0.0,  # left leg (6)
                             -0.2, 0.0, 0.0, 0.4, -0.2, 0.0,  # right leg (6)
-                            0.0, 0.0, 0.0, # torso (1)
+                            0.0, 0.0, 0.0, # waist (3)
                             0.0, 0.4, 0.0, 1.2, 0.0, 0.0, 0.0, # left arm (7)
                             0.0, -0.4, 0.0, 1.2, 0.0, 0.0, 0.0, # right arm (7)
                         ])
@@ -22,7 +24,7 @@ DEFAULT_MIMIC_OBS_G1_MIXED_MODE = np.concatenate([
                     # 29 dof
                     np.array([-0.2, 0.0, 0.0, 0.4, -0.2, 0.0,  # left leg (6)
                             -0.2, 0.0, 0.0, 0.4, -0.2, 0.0,  # right leg (6)
-                            0.0, 0.0, 0.0, # torso (1)
+                            0.0, 0.0, 0.0, # waist (3)
                             0.0, 0.4, 0.0, 1.2, 0.0, 0.0, 0.0, # left arm (7)
                             0.0, -0.4, 0.0, 1.2, 0.0, 0.0, 0.0, # right arm (7)
                         ]),
@@ -126,6 +128,18 @@ DEFAULT_HAND_POSE = {
                     # right (thumb, index, middle)
                     0, -1.0, -1.74, 1.57, 1.74, 1.57, 1.74,
                 ])
+        },
+    },
+    "unitree_g1_with_inspire_hands":
+    {
+        # DEFAULT_THUMB_ANGLE always applied to thumb bend angle, just like in inspire_ftp_wrapper.py
+        "left": {
+            "open": np.array([1, 1, 1, 1, 1, DEFAULT_THUMB_ANGLE]),
+            "close": np.array([0, 0, 0, 0, 0, DEFAULT_THUMB_ANGLE]),
+        },
+        "right": {
+            "open": np.array([1, 1, 1, 1, 1, DEFAULT_THUMB_ANGLE]),
+            "close": np.array([0, 0, 0, 0, 0, DEFAULT_THUMB_ANGLE]),
         },
     },
     "booster_t1": 

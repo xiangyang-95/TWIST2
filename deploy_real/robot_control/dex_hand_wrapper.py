@@ -70,6 +70,8 @@ class Dex3_1_Controller:
         self.Lpos = np.zeros(Dex3_Num_Motors)
         self.Rpos = np.zeros(Dex3_Num_Motors)
 
+        self.num_motors = Dex3_Num_Motors
+
         # Arrays for hand states
         self.left_hand_state_array  = np.zeros(Dex3_Num_Motors)
         self.right_hand_state_array = np.zeros(Dex3_Num_Motors)
@@ -124,6 +126,10 @@ class Dex3_1_Controller:
         # Use new unified API - send default poses
         print("🔧 Initializing hands with default poses using new API...")
         self.ctrl_dual_hand(DEFAULT_QPOS_LEFT, DEFAULT_QPOS_RIGHT)
+
+    def close(self):
+        """Alias for API consistency. Dex3 hand has no explicit teardown."""
+        pass
  
 class Dex3_1_Left_JointIndex(IntEnum):
     kLeftHandThumb0 = 0
