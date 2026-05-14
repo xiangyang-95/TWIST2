@@ -23,12 +23,13 @@ def build_mimic_obs(
     control_dt: float,
     tar_motion_steps,
     robot_type: str = "g1",
-    mask_indicator: bool = False
+    mask_indicator: bool = False,
+    device: str = "cpu"
 ):
     """
     Build the mimic_obs at time-step t_step, referencing the code in MimicRunner.
     """
-    device = torch.device("cuda")
+    device = torch.device(device)
     # Build times
     motion_times = torch.tensor([t_step * control_dt], device=device).unsqueeze(-1)
     obs_motion_times = tar_motion_steps * control_dt + motion_times
@@ -77,8 +78,8 @@ def build_mimic_obs(
                     dof_pos,
                 ), dim=-1)[:, :]  # shape (1, 1, 6 + num_dof)
         # append mask indicator 1
-        mask_indicator = torch.ones(1, mimic_obs_buf.shape[1], 1).to(device)
-        mimic_obs_buf = torch.cat((mimic_obs_buf, mask_indicator), dim=-1)
+        mask_indicator_tensor = torch.ones(1, mimic_obs_buf.shape[1], 1).to(device)
+        mimic_obs_buf = torch.cat((mimic_obs_buf, mask_indicator_tensor), dim=-1)
     else:
         mimic_obs_buf = torch.cat((
                     # root position: xy velocity + z position
@@ -121,11 +122,13 @@ def main(args, xml_file, robot_base):
 
     # 2. Load motion library
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"[Motion Server] Device: {device}")
     motion_lib = MotionLib(args.motion_file, device=device)
     
     # 3. Prepare the steps array
     tar_motion_steps = [int(x.strip()) for x in args.steps.split(",")]
     tar_motion_steps_tensor = torch.tensor(tar_motion_steps, device=device, dtype=torch.int)
+
 
     # 4. Loop over time steps and publish mimic obs
     control_dt = 0.02
@@ -138,7 +141,8 @@ def main(args, xml_file, robot_base):
             t_step=0,
             control_dt=control_dt,
             tar_motion_steps=tar_motion_steps_tensor,
-            robot_type=args.robot
+            robot_type=args.robot,
+            device=device
         )
     # compute num_steps based on motion length
     motion_id = torch.tensor([0], device=device, dtype=torch.long)
@@ -209,7 +213,8 @@ def main(args, xml_file, robot_base):
                 t_step=t_step,
                 control_dt=control_dt,
                 tar_motion_steps=tar_motion_steps_tensor,
-                robot_type=args.robot
+                robot_type=args.robot,
+                device=device
             )   
             
             # Convert to JSON (list) to put into Redis
