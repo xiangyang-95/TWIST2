@@ -28,9 +28,9 @@ import zmq
 import numpy as np
 import yaml
 import os
-import logging_mp
+import logging
 
-logger_mp = logging_mp.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 # ========================================================
 # Utility tools
@@ -92,9 +92,9 @@ class ZMQ_PublisherThread(threading.Thread):
         try:
             self._queue.put_nowait(data)
         except queue.Full:
-            logger_mp.warning(f"Publisher queue full for {self._host}:{self._port}, dropping message")
+            logger.warning(f"Publisher queue full for {self._host}:{self._port}, dropping message")
         except Exception as e:
-            logger_mp.error(f"Error serializing data for publisher: {e}")
+            logger.error(f"Error serializing data for publisher: {e}")
 
     def stop(self) -> None:
         """Stop the publisher thread gracefully."""
@@ -104,7 +104,7 @@ class ZMQ_PublisherThread(threading.Thread):
             self._queue.put_nowait(None)
         self.join(timeout=1)
         if self.is_alive():
-            logger_mp.warning("Publisher thread did not stop gracefully")
+            logger.warning("Publisher thread did not stop gracefully")
 
     def run(self) -> None:
         """Main publisher loop with socket creation in worker thread."""
@@ -129,9 +129,9 @@ class ZMQ_PublisherThread(threading.Thread):
                     try:
                         self._socket.send(data, zmq.NOBLOCK)
                     except zmq.Again:
-                        logger_mp.warning(f"High water mark reached for at {self._host}:{self._port}, dropping message")
+                        logger.warning(f"High water mark reached for at {self._host}:{self._port}, dropping message")
                     except zmq.ZMQError as e:
-                        logger_mp.error(f"Failed to publish to at {self._host}:{self._port}: {e}")
+                        logger.error(f"Failed to publish to at {self._host}:{self._port}: {e}")
                         break
 
                 except queue.Empty:
@@ -139,18 +139,18 @@ class ZMQ_PublisherThread(threading.Thread):
                     continue
                 except Exception as e:
                     if self._running:
-                        logger_mp.error(f"Error in publisher loop: {e}")
+                        logger.error(f"Error in publisher loop: {e}")
                     break
 
         except Exception as e:
-            logger_mp.error(f"Failed to initialize publisher socket: {e}")
+            logger.error(f"Failed to initialize publisher socket: {e}")
         finally:
             # Ensure socket is closed when thread exits
             if self._socket:
                 try:
                     self._socket.close()
                 except Exception as e:
-                    logger_mp.warning(f"Error closing socket in cleanup: {e}")
+                    logger.warning(f"Error closing socket in cleanup: {e}")
                 self._socket = None
 
     def wait_for_start(self, timeout: float = 1.0) -> bool:
@@ -178,7 +178,7 @@ class ZMQ_PublisherManager:
 
             return publisher_thread
         except Exception as e:
-            logger_mp.error(f"Failed to create publisher thread for {host}:{port}: {e}")
+            logger.error(f"Failed to create publisher thread for {host}:{port}: {e}")
             raise
 
     def _get_publisher_thread(self, port: int, host: str = "0.0.0.0") -> ZMQ_PublisherThread:
@@ -194,7 +194,7 @@ class ZMQ_PublisherManager:
                 try:
                     self._publisher_threads[key].stop()
                 except Exception as e:
-                    logger_mp.error(f"Error stopping publisher at {key[0]}:{key[1]}: {e}")
+                    logger.error(f"Error stopping publisher at {key[0]}:{key[1]}: {e}")
                 del self._publisher_threads[key]
     
     # --------------------------------------------------------
@@ -231,7 +231,7 @@ class ZMQ_PublisherManager:
             publisher_thread = self._get_publisher_thread(port, host)
             publisher_thread.send(data)
         except Exception as e:
-            logger_mp.error(f"Unexpected error in publish: {e}")
+            logger.error(f"Unexpected error in publish: {e}")
             raise
 
     def close(self) -> None:
@@ -243,7 +243,7 @@ class ZMQ_PublisherManager:
                 try:
                     publisher_thread.stop()
                 except Exception as e:
-                    logger_mp.error(f"Error stopping publisher at {key[0]}:{key[1]}: {e}")
+                    logger.error(f"Error stopping publisher at {key[0]}:{key[1]}: {e}")
             self._publisher_threads.clear()
 
 # ========================================================
@@ -281,7 +281,7 @@ class ZMQ_SubscriberThread(threading.Thread):
             np_img = np.frombuffer(jpg_bytes, dtype=np.uint8)
             return cv2.imdecode(np_img, cv2.IMREAD_COLOR)
         except Exception as e:
-            logger_mp.warning(f"[ZMQ_SubscriberThread] Failed to decode image: {e}")
+            logger.warning(f"[ZMQ_SubscriberThread] Failed to decode image: {e}")
             return None
         
     def _wait_for_start(self, timeout: float = 1.0) -> bool:
@@ -321,7 +321,7 @@ class ZMQ_SubscriberThread(threading.Thread):
         self._running = False
         self.join(timeout=1.0)
         if self.is_alive():
-            logger_mp.warning("Subscriber thread did not stop gracefully")
+            logger.warning("Subscriber thread did not stop gracefully")
 
     def run(self) -> None:
         """Main subscriber loop with socket creation in worker thread."""
@@ -349,20 +349,20 @@ class ZMQ_SubscriberThread(threading.Thread):
                         self._triple_ring_buffer.write(img_numpy)  # write to 3-ring-buffer
                     except Exception as e:
                         if self._running:
-                            logger_mp.error(f"Error in subscriber loop: {e}")
+                            logger.error(f"Error in subscriber loop: {e}")
                         break
                 else:
                     self._triple_ring_buffer.write(None)
-                    logger_mp.debug(f"No message received from {self._host}:{self._port} within timeout.")
+                    logger.debug(f"No message received from {self._host}:{self._port} within timeout.")
         except Exception as e:
-            logger_mp.error(f"Failed to initialize subscriber socket: {e}")
+            logger.error(f"Failed to initialize subscriber socket: {e}")
         finally:
             # Ensure socket is closed when thread exits
             if self._socket:
                 try:
                     self._socket.close()
                 except Exception as e:
-                    logger_mp.warning(f"Error closing socket in cleanup: {e}")
+                    logger.warning(f"Error closing socket in cleanup: {e}")
                 self._socket = None
 
 class ZMQ_SubscriberManager:
@@ -385,7 +385,7 @@ class ZMQ_SubscriberManager:
                 raise ConnectionError(f"Subscriber thread failed to start for {host}:{port}")
             return subscriber_thread
         except Exception as e:
-            logger_mp.error(f"Failed to create subscriber thread for {host}:{port}: {e}")
+            logger.error(f"Failed to create subscriber thread for {host}:{port}: {e}")
             raise 
 
     def _get_subscriber_thread(self, host: str, port: int) -> ZMQ_SubscriberThread:
@@ -432,7 +432,7 @@ class ZMQ_SubscriberManager:
                 try:
                     subscriber.stop()
                 except Exception as e:
-                    logger_mp.error(f"Error stopping subscriber at {key[0]}:{key[1]}: {e}")
+                    logger.error(f"Error stopping subscriber at {key[0]}:{key[1]}: {e}")
             self._subscriber_threads.clear()
 
 # ========================================================
@@ -458,7 +458,7 @@ class ZMQ_Responser:
 
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
-        logger_mp.info(f"[Responser] Camera Config Responser initialized at {self._host}:{self._port}")
+        logger.info(f"[Responser] Camera Config Responser initialized at {self._host}:{self._port}")
 
     def _run(self):
         poller = zmq.Poller()
@@ -472,9 +472,9 @@ class ZMQ_Responser:
             except zmq.ZMQError as e:
                 if not self._running:
                     break  # normal exit when stopping
-                logger_mp.error(f"ZMQError in Responser: {e}")
+                logger.error(f"ZMQError in Responser: {e}")
             except Exception as e:
-                logger_mp.error(f"Unexpected error in Responser: {e}")
+                logger.error(f"Unexpected error in Responser: {e}")
     # --------------------------------------------------------
     # public api
     # --------------------------------------------------------
@@ -486,12 +486,12 @@ class ZMQ_Responser:
         self._running = False
         self._thread.join(timeout=1)
         if self._thread.is_alive():
-            logger_mp.warning("Responser thread did not stop gracefully")
+            logger.warning("Responser thread did not stop gracefully")
         try:
             self._socket.close()
             self._context.term()
         except Exception as e:
-            logger_mp.warning(f"Error closing Responser socket: {e}")
+            logger.warning(f"Error closing Responser socket: {e}")
 
 # ========================================================
 # ZMQ request
@@ -532,31 +532,31 @@ class ZMQ_Requester:
             if self._socket in socks and socks[self._socket] == zmq.POLLIN:
                 cam_config = self._socket.recv_json()
                 if cam_config is not None:
-                    logger_mp.info(f"Received camera config from server {self._host}:{self._port}")
+                    logger.info(f"Received camera config from server {self._host}:{self._port}")
                     with open(self._config_client_path, "w") as f:
                         yaml.safe_dump(cam_config, f, sort_keys=False, allow_unicode=True)
-                    logger_mp.info(f"Saved camera config to local {self._config_client_path}")
+                    logger.info(f"Saved camera config to local {self._config_client_path}")
             else:
-                logger_mp.warning(f"Request to {self._host}:{self._port} timed out or no response, using local config.")
+                logger.warning(f"Request to {self._host}:{self._port} timed out or no response, using local config.")
                 if os.path.exists(self._config_client_path):
                     try:
                         with open(self._config_client_path, "r") as f:
                             cam_config = yaml.safe_load(f)
-                        logger_mp.info(f"Loaded camera config from local {self._config_client_path}")
+                        logger.info(f"Loaded camera config from local {self._config_client_path}")
                     except Exception as e:
-                        logger_mp.warning(f"Failed to load local cam_config_client.yaml: {e}")
+                        logger.warning(f"Failed to load local cam_config_client.yaml: {e}")
                 elif os.path.exists(self._config_server_path):
                     try:
                         with open(self._config_server_path, "r") as f:
                             cam_config = yaml.safe_load(f)
-                        logger_mp.info(f"Loaded camera config from local {self._config_server_path}")
+                        logger.info(f"Loaded camera config from local {self._config_server_path}")
                     except Exception as e:
-                        logger_mp.warning(f"Failed to load local cam_config_server.yaml: {e}")
+                        logger.warning(f"Failed to load local cam_config_server.yaml: {e}")
                 else:
-                    logger_mp.error("No camera configuration file found locally.")
+                    logger.error("No camera configuration file found locally.")
             return cam_config
         except Exception as e:
-            logger_mp.error(f"Unexpected error in Requester: {e}")
+            logger.error(f"Unexpected error in Requester: {e}")
             return cam_config
 
     def close(self):
@@ -565,7 +565,7 @@ class ZMQ_Requester:
             self._socket.close()
             self._context.term()
         except Exception as e:
-            logger_mp.warning(f"Error closing Requester socket: {e}")
+            logger.warning(f"Error closing Requester socket: {e}")
 
 
 # ========================================================
@@ -589,24 +589,6 @@ class ImageClient:
         if self._cam_config is None:
             raise RuntimeError("Failed to get camera configuration.")
         
-        if self._cam_config['forehead_camera']['enable_zmq']:
-            self._subscriber_manager.subscribe(self._host, self._cam_config['forehead_camera']['zmq_port'])
-
-        if self._cam_config['table_camera']['enable_zmq']:
-            self._subscriber_manager.subscribe(self._host, self._cam_config['table_camera']['zmq_port'])
-
-        # if self._cam_config['left_wrist_camera']['enable_zmq']:
-        #     self._subscriber_manager.subscribe(self._host, self._cam_config['left_wrist_camera']['zmq_port'])
-
-        # if self._cam_config['right_wrist_camera']['enable_zmq']:
-        #     self._subscriber_manager.subscribe(self._host, self._cam_config['right_wrist_camera']['zmq_port'])
-
-        if not self._cam_config['forehead_camera']['enable_zmq'] and not self._cam_config['forehead_camera']['enable_webrtc']:
-            logger_mp.warning("[Image Client] NOTICE! Forehead camera is not enabled on both ZMQ and WebRTC.")
-
-        if not self._cam_config['table_camera']['enable_zmq'] and not self._cam_config['table_camera']['enable_webrtc']:
-            logger_mp.warning("[Image Client] NOTICE! Table camera is not enabled on both ZMQ and WebRTC.")
-
     # --------------------------------------------------------
     # public api
     # --------------------------------------------------------
@@ -627,7 +609,7 @@ class ImageClient:
         
     def close(self):
         self._subscriber_manager.close()
-        logger_mp.info("Image client has been closed.")
+        logger.info("Image client has been closed.")
 
 def main():
     # command line args
@@ -645,13 +627,13 @@ def main():
         if cam_config['head_camera']['enable_zmq']:
             head_img, head_fps = client.get_head_frame()
             if head_img is not None:
-                logger_mp.info(f"Head Camera FPS: {head_fps:.2f}")
-                logger_mp.debug(f"Head Camera Shape: {cam_config['head_camera']['image_shape']}")
-                logger_mp.debug(f"Head Camera Binocular: {cam_config['head_camera']['binocular']}")
+                logger.info(f"Head Camera FPS: {head_fps:.2f}")
+                logger.debug(f"Head Camera Shape: {cam_config['head_camera']['image_shape']}")
+                logger.debug(f"Head Camera Binocular: {cam_config['head_camera']['binocular']}")
                 cv2.imshow("Head Camera", head_img)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
-            logger_mp.info("Exiting image client on user request.")
+            logger.info("Exiting image client on user request.")
             running = False
             # clean up
             client.close()

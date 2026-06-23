@@ -79,7 +79,8 @@ def main(args):
     NUM_CAMERAS = 2
     single_width = 640
     height = 480
-    image_show = True
+    image_show = not args.no_camera
+    use_camera = not args.no_camera
     recording = False
     GOAL = "Put cup into black box"
     DESC = "a humanoid robot uses its right arm and right hand to put the cup into black box"
@@ -100,19 +101,22 @@ def main(args):
     image_array = np.ndarray(image_shape, dtype=np.uint8,
                              buffer=image_shared_memory.buf)
 
-    print(f"Creating teleimager client. Connecting to {args.robot_ip}")
-    teleimager_client = TeleimagerClient(
-        host=args.robot_ip,
-        img_shape=image_shape,
-        img_shm_name=image_shared_memory.name,
-    )
-    teleimager_thread = threading.Thread(
-        target=teleimager_client.receive_process, daemon=True)
-    teleimager_thread.daemon = True
-    teleimager_thread.start()
+    if use_camera:
+        print(f"Creating teleimager client. Connecting to {args.robot_ip}")
+        teleimager_client = TeleimagerClient(
+            host=args.robot_ip,
+            img_shape=image_shape,
+            img_shm_name=image_shared_memory.name,
+        )
+        teleimager_thread = threading.Thread(
+            target=teleimager_client.receive_process, daemon=True)
+        teleimager_thread.daemon = True
+        teleimager_thread.start()
+    else:
+        print("Camera recording disabled (sim mode or --no-camera)")
 
     # create recorder
-    save_data_keys = ['forehead_rgb', 'table_rgb']
+    save_data_keys = ['forehead_rgb', 'table_rgb'] if use_camera else []
     if not os.path.exists(args.data_folder):
         print(f"Creating data folder at {args.data_folder}...")
         os.makedirs(args.data_folder)
@@ -144,8 +148,6 @@ def main(args):
             start_time = time.time()
             controller_data = json.loads(redis_client.get(f"controller_data"))
             button_pressed = controller_data['LeftController']['key_two']
-            print(f"==> button_pressed: {button_pressed}", end="\r")
-
             quit_key = controller_data['LeftController']['axis_click']
             if quit_key:
                 running = False
@@ -155,7 +157,6 @@ def main(args):
 
             # Detect button press (rising edge detection)
             if button_pressed and not prev_button_pressed:
-                print("button pressed")
                 recording = not recording
                 if recording:
                     speaker.speak("episode recording started.")
@@ -175,12 +176,13 @@ def main(args):
                 data_dict = {'idx': step_count}
 
                 # receive vision data (split two cameras)
-                full_img = image_array.copy()
+                if use_camera:
+                    full_img = image_array.copy()
 
-                w = full_img.shape[1] // 2
+                    w = full_img.shape[1] // 2
 
-                data_dict["forehead_rgb"] = full_img[:, :w, :]
-                data_dict["table_rgb"] = full_img[:, w:, :]
+                    data_dict["forehead_rgb"] = full_img[:, :w, :]
+                    data_dict["table_rgb"] = full_img[:, w:, :]
 
                 # current timestamp in ms
                 data_dict["t_img"] = int(time.time() * 1000)
@@ -311,7 +313,17 @@ if __name__ == "__main__":
     parser.add_argument(
         "--redis_ip", default="localhost", help="REDIS server instance"
     )
+    parser.add_argument(
+        "--no-camera", action="store_true", help="disable camera recording"
+    )
+    parser.add_argument(
+        "--sim", action="store_true", help="sim mode (disables camera recording)"
+    )
 
     args = parser.parse_args()
+
+    # In sim mode, camera is not available
+    if args.sim:
+        args.no_camera = True
 
     main(args)

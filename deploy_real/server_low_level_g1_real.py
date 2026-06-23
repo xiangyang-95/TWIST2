@@ -1,24 +1,21 @@
 #!/usr/bin/env python3
-import argparse
-import random
+import os
 import time
 import json
-import numpy as np
 import torch
 import redis
+import argparse
+import numpy as np
 from collections import deque
-# from robot_control.common.remote_controller import KeyMap
-
-from robot_control.g1_wrapper import G1RealWorldEnv
-from robot_control.config import Config
-import os
-from data_utils.rot_utils import quatToEuler
 
 try:
     import unitree_interface
 except ImportError:
     unitree_interface = None
 
+from data_utils.rot_utils import quatToEuler
+from robot_control.config import Config
+from robot_control.g1_wrapper import G1RealWorldEnv
 from robot_control.dex_hand_wrapper import Dex3_1_Controller
 from robot_control.inspire_hand_wrapper import InspireHandController
 
@@ -289,9 +286,7 @@ class RealTimePolicyController(object):
                 self.proprio_history_buf.append(obs_full)
                 
                 future_obs = action_mimic.copy()
-                
                 obs_buf = np.concatenate([obs_full, obs_hist, future_obs])
-                
                 assert obs_buf.shape[0] == self.total_obs_size, f"Expected {self.total_obs_size} obs, got {obs_buf.shape[0]}"
                 
                 obs_tensor = torch.from_numpy(obs_buf).float().unsqueeze(0).to(self.device)
@@ -299,15 +294,11 @@ class RealTimePolicyController(object):
                     raw_action = self.policy(obs_tensor).cpu().numpy().squeeze()
                 
                 self.last_action = raw_action.copy()
-
                 raw_action = np.clip(raw_action, -10.0, 10.0)
                 target_dof_pos = self.default_dof_pos + raw_action * self.action_scale
 
-                # self.redis_client.set("action_low_level_unitree_g1", json.dumps(raw_action.tolist()))
-
                 kp_scale = 1.0
                 kd_scale = 1.0
-
                 self.env.send_robot_action(target_dof_pos, kp_scale, kd_scale)
                 
                 if self.use_hand:

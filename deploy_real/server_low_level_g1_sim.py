@@ -1,16 +1,19 @@
-import argparse
+import os
 import json
 import time
-import numpy as np
 import redis
-import mujoco
-import torch
+import argparse
+import numpy as np
 from rich import print
-from collections import deque
-import mujoco.viewer as mjv
 from tqdm import tqdm
-import os
+from collections import deque
+
+import mujoco
+import mujoco.viewer as mjv
+
 from data_utils.rot_utils import quatToEuler
+
+import torch
 
 try:
     import onnxruntime as ort
@@ -220,8 +223,8 @@ class RealTimePolicyController:
         # Send initial proprio to redis
         initial_obs = np.zeros(self.n_obs_single, dtype=np.float32)
         self.redis_pipeline.set("state_body_unitree_g1_with_hands", json.dumps(initial_obs.tolist()))
-        self.redis_pipeline.set("state_hand_left_unitree_g1_with_hands", json.dumps(np.zeros(7).tolist()))
-        self.redis_pipeline.set("state_hand_right_unitree_g1_with_hands", json.dumps(np.zeros(7).tolist()))
+        self.redis_pipeline.set("state_hand_left_unitree_g1_with_hands", json.dumps([1.0] * 5 + [0.15]))
+        self.redis_pipeline.set("state_hand_right_unitree_g1_with_hands", json.dumps([1.0] * 5 + [0.15]))
         self.redis_pipeline.execute()
 
         measure_fps = self.measure_fps
@@ -261,8 +264,8 @@ class RealTimePolicyController:
                     # Send proprio to redis
                     
                     self.redis_pipeline.set("state_body_unitree_g1_with_hands", json.dumps(state_body.tolist()))
-                    self.redis_pipeline.set("state_hand_left_unitree_g1_with_hands", json.dumps(np.zeros(7).tolist()))
-                    self.redis_pipeline.set("state_hand_right_unitree_g1_with_hands", json.dumps(np.zeros(7).tolist()))
+                    self.redis_pipeline.set("state_hand_left_unitree_g1_with_hands", json.dumps([1.0] * 5 + [0.15]))
+                    self.redis_pipeline.set("state_hand_right_unitree_g1_with_hands", json.dumps([1.0] * 5 + [0.15]))
                     self.redis_pipeline.set("state_neck_unitree_g1_with_hands", json.dumps(np.zeros(2).tolist()))
                     self.redis_pipeline.set("t_state", int(time.time() * 1000)) # current timestamp in ms
                     self.redis_pipeline.execute()
